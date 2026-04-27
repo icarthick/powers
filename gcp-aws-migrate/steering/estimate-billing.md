@@ -106,7 +106,15 @@ Difference:
   Worst case: [high vs GCP] (potential increase of $X/month)
 ```
 
-## Step 4: Document Unknowns
+## Step 4: Human One-Time Migration Costs (Out of Scope)
+
+**Do not** present human labor, professional services, engineering, training, discovery/design effort, or similar people-time work as one-time migration **costs** or budget categories.
+
+Populate `migration_cost_considerations.categories` as an **empty array** `[]`. Use `migration_cost_considerations.note` to state that human and professional-services one-time migration costs are intentionally excluded. You may still recommend IaC discovery in `recommendation.next_steps` or `unknowns` as a **precision** improvement — without framing it as a cost line item.
+
+**Vendor fees:** If you discuss GCP egress in narrative, describe it only as **vendor/network charges** when grounded in `billing-profile.json` (do not invent dollar amounts). Do not mix human effort into "one-time cost" lists.
+
+## Step 5: Document Unknowns
 
 List what would narrow the cost ranges:
 
@@ -123,7 +131,7 @@ Recommendation:
   This would narrow total estimate range from ±30-40% to ±10-15%.
 ```
 
-## Step 5: Generate Output
+## Step 6: Generate Output
 
 Write `estimation-billing.json`.
 
@@ -135,7 +143,7 @@ Write `estimation-billing.json`.
   "timestamp": "[ISO 8601]",
   "metadata": {
     "estimate_source": "billing_only",
-    "pricing_source": "cached|live|fallback",
+    "pricing_source": "cached|live|cached_fallback|unavailable",
     "confidence_note": "Estimates have wider ranges due to billing-only source"
   },
   "accuracy_confidence": "±30-40%",
@@ -177,6 +185,12 @@ Write `estimation-billing.json`.
     "aws_monthly_high": 0.00,
     "best_case_savings": 0.00,
     "worst_case_increase": 0.00
+  },
+
+  "migration_cost_considerations": {
+    "categories": [],
+    "note": "Human and professional-services one-time migration costs are not presented by this advisor. Billing-only source increases estimate variance; IaC discovery narrows recurring cost ranges.",
+    "complexity_factors": ["billing_only_source", "unknown_infrastructure_config"]
   },
 
   "unknowns": [
@@ -226,17 +240,27 @@ Write `estimation-billing.json`.
 - No reference to Terraform-based configurations
 - All unknowns documented with impact and resolution
 - All cost values are numbers, not strings
+- `migration_cost_considerations.categories` is `[]` — no human one-time migration costs presented
 - Output is valid JSON
+
+## Completion Handoff Gate (Fail Closed)
+
+Before returning control to `estimate.md`, require:
+
+- `estimation-billing.json` exists and passes the Output Validation Checklist above.
+
+If this gate fails: STOP and output: "estimate-billing did not produce a valid `estimation-billing.json`; do not complete Phase 4."
 
 ## Present Summary
 
 After writing `estimation-billing.json`, present a concise summary to the user:
 
-1. GCP baseline from billing data (total monthly spend)
-2. AWS projected cost ranges: low / mid / high per service
-3. Total projection: best case / expected / worst case vs GCP
-4. Key unknowns that would narrow the estimates
-6. Recommendation: run IaC discovery for tighter estimates (±10-15% vs ±30-40%)
+1. **Pricing source and accuracy**: State that estimates are billing-only projections with ±30-40% accuracy due to lack of infrastructure configuration. Example: "Billing-only estimates, accuracy ±30-40%. Provide Terraform files to narrow to ±10-15%."
+2. GCP baseline from billing data (total monthly spend)
+3. AWS projected cost ranges: low / mid / high per service
+4. Total projection: best case / expected / worst case vs GCP
+5. Key unknowns that would narrow the estimates
+6. Recommendation: run IaC discovery for tighter estimates (±10-15% vs ±30-40%) — as a precision step, not as a human cost estimate
 
 Keep it under 20 lines. The user can ask for details or re-read `estimation-billing.json` at any time.
 
@@ -247,3 +271,4 @@ The Generate phase uses `estimation-billing.json`:
 - Uses wide cost ranges for conservative timeline planning
 - Recommends IaC discovery as a prerequisite step
 - Documents unknowns as prerequisites per generation step
+- **Do not** surface human one-time migration **costs** from this artifact — `migration_cost_considerations.categories` remains empty in user-facing docs

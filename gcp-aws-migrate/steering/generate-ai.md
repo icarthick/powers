@@ -22,7 +22,7 @@ Check `preferences.json` → `ai_constraints.ai_framework` to determine timeline
 **Gateway users (1-3 days)** — `ai_framework` includes `llm_router`, `api_gateway`, `voice_platform`, or `framework`:
 
 | Gateway Type                      | Migration Action                                              | Effort            |
-| --------------------------------- | ------------------------------------------------------------- | ----------------- |
+| --------------------------------- | ------------------------------------------------------------- | ------------------ |
 | LLM Router (LiteLLM, OpenRouter)  | Change model string to `bedrock/<model_id>`                   | 1 config line     |
 | API Gateway (Kong, Apigee)        | Add Bedrock upstream + SigV4 signing                          | 1-2 config files  |
 | Voice Platform (Vapi, Bland.ai)   | Check native Bedrock support, update dashboard                | Dashboard config  |
@@ -147,6 +147,14 @@ Write `generation-ai.json` to `$MIGRATION_DIR/`.
 - [ ] `step_by_step_guide.files_to_modify` matches `aws-design-ai.json` code_migration
 - [ ] `rollback_plan.mechanism` is `"feature_flag"`
 - [ ] `success_criteria` covers quality, latency, and cost
+
+## Completion Handoff Gate (Fail Closed)
+
+Before returning control to `generate.md`, require:
+
+- `generation-ai.json` exists and passes the Validation Checklist above.
+
+If this gate fails: STOP and output: "generate-ai did not produce a valid `generation-ai.json`; do not continue Generate Stage 2."
 
 ## Generate Phase Integration
 

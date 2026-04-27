@@ -2,6 +2,8 @@
 
 **Phase 2 of 5** — Ask adaptive questions before design begins, then interpret answers into ready-to-apply design constraints.
 
+> **HARD GATE — Clarify before Design:** Do not load `steering/design.md` (or any later phase) until this phase finishes **and** `$MIGRATION_DIR/.phase-status.json` records `phases.clarify` as `"completed"`. Writing `preferences.json` without updating phase status is a protocol violation. If the user asks to skip questions, use documented defaults and still complete this phase (including phase status).
+
 The output — `preferences.json` — is consumed directly by Design and Estimate without any further interpretation.
 
 Questions are organized into **six named categories (A–F)** with documented firing rules. Up to 22 questions across categories, depending on which discovery artifacts exist and which GCP services are detected. A standalone **AI-Only** flow exists for migrations that only move AI/LLM calls to Bedrock.
@@ -27,7 +29,7 @@ If `$MIGRATION_DIR/preferences.json` already exists:
 > A) Re-use these preferences and skip questions
 > B) Start fresh and re-answer all questions
 
-- If A: skip to Validation Checklist, proceed with existing file.
+- If A: Load existing preferences, then run Step 2 item 6 only (BigQuery detection) on current discovery artifacts. If `bigquery_present` is **true**, output the Step 4 **BigQuery specialist advisory** block once (even though questions are skipped). Then skip to Validation Checklist with the existing `preferences.json`.
 - If B: continue to Step 1.
 
 ---
@@ -81,8 +83,9 @@ Before generating questions, scan the inventory to extract values that are alrea
 2. **Resource types present** — Build a set of resource types: compute (Cloud Run, Cloud Functions, GKE, GCE), database (Cloud SQL, Spanner, Memorystore), storage (Cloud Storage), messaging (Pub/Sub).
 3. **Billing SKUs** — If `billing-profile.json` exists, check if any SKU reveals storage class, HA configuration, or other answerable questions.
 4. **GCP spend baseline** — If `billing-profile.json` exists, read `summary.total_monthly_spend` and map it to the Q3 bucket (`<1000` → A, `1000-5000` → B, `5000-20000` → C, `20000-100000` → D, `>100000` → E). Use this as the **billing-informed default for Q3** instead of the hardcoded B. Still ask Q3 (the user may know about spend beyond this billing export), but if they answer "I don't know" or "use all defaults", apply the billing-derived bucket.
-5. **Config confidence** — If inventory `metadata.source = "billing"`, identify resources with `config_confidence = "assumed"` for Category B questions.
+5. **Billing-only mode** — If `billing-profile.json` exists and `gcp-resource-inventory.json` does NOT exist, check `billing-profile.json → services[]` for Category B question matching.
 6. **AI framework detection** — If `ai-workload-profile.json` exists, check `integration.gateway_type` and `integration.frameworks` for auto-detection of Q14 answer.
+7. **BigQuery / analytics warehouse detection** — Set `bigquery_present` to **true** if **any** of: (a) a resource in `gcp-resource-inventory.json` has `gcp_type` (or equivalent type field) starting with `google_bigquery_`; (b) `billing-profile.json` lists a service/SKU that clearly indicates **BigQuery** (e.g., service name or SKU contains `BigQuery`). Otherwise `bigquery_present` is **false**. This flag controls whether the BigQuery specialist advisory is shown in Step 4.
 
 Record extracted values. Questions whose answers are fully determined by extraction will be skipped and the extracted value used directly with `chosen_by: "extracted"`.
 
@@ -95,7 +98,7 @@ Record extracted values. Questions whose answers are fully determined by extract
 | Category | Name               | Firing Rule                                                                                     | Reference File        | Questions                                                                                                           |
 | -------- | ------------------ | ----------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | **A**    | Global/Strategic   | **Always fires**                                                                                | `clarify-global.md`   | Q1 (location), Q2 (compliance), Q3 (GCP spend), Q4 (funding stage), Q5 (multi-cloud), Q6 (uptime), Q7 (maintenance) |
-| **B**    | Configuration Gaps | Inventory with `metadata.source == "billing"` AND at least one `config_confidence == "assumed"` | `clarify-compute.md`  | Cloud SQL HA, Cloud Run count, Memorystore memory, Functions gen                                                    |
+| **B**    | Configuration Gaps | `billing-profile.json` exists AND `gcp-resource-inventory.json` does NOT exist | `clarify-compute.md`  | Cloud SQL HA, Cloud Run count, Memorystore memory, Functions gen                                                    |
 | **C**    | Compute Model      | Compute resources present (Cloud Run, Cloud Functions, GKE, GCE)                                | `clarify-compute.md`  | Q8 (K8s sentiment), Q9 (WebSocket), Q10 (Cloud Run traffic), Q11 (Cloud Run spend)                                  |
 | **D**    | Database Model     | Database resources present (Cloud SQL, Spanner, Memorystore)                                    | `clarify-database.md` | Q12 (DB traffic pattern), Q13 (DB I/O)                                                                              |
 | **E**    | Migration Posture  | **Disabled by default** — requires explicit user opt-in                                         | _(inline below)_      | HA upgrades, right-sizing                                                                                           |
@@ -104,7 +107,7 @@ Record extracted values. Questions whose answers are fully determined by extract
 **Apply firing rules to determine which categories are active:**
 
 1. Category A is always active.
-2. Check inventory `metadata.source` — if `"billing"` with assumed configs, Category B is active.
+2. Check for billing-only mode — if `billing-profile.json` exists and `gcp-resource-inventory.json` does NOT, Category B is active.
 3. Check for compute resources — if present, Category C is active. Within C, skip Q8 if no GKE present. Skip Q10/Q11 if no Cloud Run present.
 4. Check for database resources — if present, Category D is active.
 5. Category E is disabled by default. Do not activate unless user opts in.
@@ -155,6 +158,20 @@ If the user opts in, present after all other categories:
 ---
 
 ## Step 4: Present Questions Interactively
+
+**BigQuery specialist advisory (mandatory if detected):** If Step 2 set `bigquery_present` to **true**, output this block **once**, **before** any questions (same turn), then continue with the question flow:
+
+> **BigQuery / Analytics Warehouse Detected**
+>
+> Your GCP environment includes BigQuery resources. This tool does **not** recommend a specific AWS analytics or data warehouse service for BigQuery workloads. BigQuery migrations require specialist evaluation of:
+> - Query patterns and workload characteristics
+> - Data volumes and partitioning strategies
+> - Downstream dependencies and BI tool integrations
+> - Cost modeling for different AWS analytics architectures
+>
+> **Recommended next step:** Engage your **AWS account team** and/or a **data analytics migration partner** for a dedicated BigQuery assessment.
+>
+> The Design phase will mark BigQuery resources as **"Deferred — specialist engagement"** rather than mapping them to a specific AWS service.
 
 Present questions **one at a time** in conversational order. Wait for the user's response to each question before presenting the next one. This creates a natural dialogue rather than an overwhelming form.
 
@@ -269,16 +286,19 @@ Wait for the user's response to EVERY question. Do NOT batch questions. Do NOT p
 | Zero downtime required       | Q7 = No downtime                             | Blue/green + AWS DMS required                             |
 | HIPAA compliance             | Q2 = HIPAA                                   | BAA services only, specific regions                       |
 | FedRAMP required             | Q2 = FedRAMP                                 | GovCloud regions only                                     |
+| CCPA / CPRA                  | Q2 = G (CCPA / CPRA)                         | Consumer privacy, logging/retention, data-inventory posture; confirm regions with legal review |
 | Gateway-only AI              | Q14 = B only (LLM router/gateway)            | Config change only; skip SDK migration                    |
 | LangChain/LangGraph AI       | Q14 includes C                               | Provider swap via ChatBedrock; 1–3 days                   |
 | OpenAI Agents SDK            | Q14 includes E                               | Highest AI effort; Bedrock Agents; 2–4 weeks              |
 | Multi-agent + MCP            | Q14 = D + F                                  | Bedrock Agents to unify orchestration + MCP               |
-| Voice platform AI            | Q14 includes G                               | Check native Bedrock support; Nova Sonic if needed        |
+| Voice platform AI            | Q14 includes G                               | Check native Bedrock support; Nova 2 Sonic if needed      |
+| GPT-5.4 migration            | Q19 = GPT-5.4                                | Claude Sonnet 4.6 — near price parity; AWS consolidation  |
+| GPT-5.4 Mini/Nano migration  | Q19 = GPT-5.4 Mini or Nano                   | Nova Lite/Micro — 87-94% cheaper on Bedrock               |
 | GPT-4 Turbo migration        | Q19 = GPT-4 Turbo                            | Claude Sonnet 4.6 — 70% cheaper on input                  |
 | o-series migration           | Q19 = o-series                               | Claude Sonnet 4.6 with extended thinking                  |
 | High-volume cost-critical AI | Q18 = High + cost critical                   | Nova Micro or Haiku 4.5 + provisioned throughput          |
 | Reasoning/agent workload     | Q17 = Extended thinking                      | Claude Sonnet 4.6 extended thinking; Opus 4.6 for hardest |
-| Speech-to-speech AI          | Q17 = Real-time speech                       | Nova Sonic                                                |
+| Speech-to-speech AI          | Q17 = Real-time speech                       | Nova 2 Sonic                                              |
 | RAG workload                 | Q17 = RAG optimization                       | Bedrock Knowledge Bases + Titan Embeddings                |
 | Vision workload              | Q20 = Vision required                        | Claude Sonnet 4.6 (multimodal)                            |
 | Latency-critical AI          | Q21 = Critical                               | Haiku 4.5 or Nova Micro + streaming                       |
@@ -297,6 +317,7 @@ Write `$MIGRATION_DIR/preferences.json`:
 ```json
 {
   "metadata": {
+    "migration_type": "full",
     "timestamp": "<ISO timestamp>",
     "discovery_artifacts": ["gcp-resource-inventory.json", "ai-workload-profile.json"],
     "questions_asked": [
@@ -336,7 +357,7 @@ Write `$MIGRATION_DIR/preferences.json`:
     "ai_monthly_spend": { "value": "$500-$2K", "chosen_by": "user" },
     "ai_priority": { "value": "balanced", "chosen_by": "user" },
     "ai_critical_feature": { "value": "function-calling", "chosen_by": "user" },
-    "ai_volume_cost": { "value": "low-quality", "chosen_by": "user" },
+    "ai_token_volume": { "value": "low", "chosen_by": "user" },
     "ai_model_baseline": { "value": "claude-sonnet-4-6", "chosen_by": "derived" },
     "ai_vision": { "value": "text-only", "chosen_by": "user" },
     "ai_latency": { "value": "important", "chosen_by": "user" },
@@ -392,7 +413,7 @@ Write `$MIGRATION_DIR/preferences.json`:
 | Q15 — AI spend          | B ($500–$2K)         | `ai_monthly_spend: "$500-$2K"`                    |
 | Q16 — AI priority       | E (balanced)         | `ai_priority: "balanced"`                         |
 | Q17 — Critical feature  | J (none)             | no additional override                            |
-| Q18 — Volume + cost     | A (low + quality)    | `ai_volume_cost: "low-quality"`                   |
+| Q18 — Volume + cost     | A (low + quality)    | `ai_token_volume: "low"`                      |
 | Q19 — Current model     | _(auto-detect)_      | `ai_model_baseline` from code detection           |
 | Q20 — Vision            | A (text only)        | no constraint                                     |
 | Q21 — AI latency        | B (important)        | `ai_latency: "important"`                         |
@@ -404,6 +425,7 @@ Write `$MIGRATION_DIR/preferences.json`:
 
 Before handing off to Design:
 
+- [ ] If `bigquery_present` was **true**, the Step 4 BigQuery specialist advisory was shown before questions — **or**, if Step 0 option A (reuse preferences), the same advisory was shown after BigQuery detection
 - [ ] `preferences.json` written to `$MIGRATION_DIR/`
 - [ ] `design_constraints.target_region` is populated with `value` and `chosen_by`
 - [ ] `design_constraints.availability` is populated (if Q6 was asked or defaulted)
@@ -422,9 +444,10 @@ Before handing off to Design:
 
 ## Step 6: Update Phase Status
 
-Update `$MIGRATION_DIR/.phase-status.json`:
+Use the Phase Status Update Protocol (read-merge-write) to update `$MIGRATION_DIR/.phase-status.json` in the same turn as the output message:
 
 - Set `phases.clarify` to `"completed"`
+- Set `current_phase` to `"design"`
 - Update `last_updated` to current timestamp
 
 Output to user: "Clarification complete. Proceeding to Phase 3: Design AWS Architecture."

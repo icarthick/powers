@@ -7,12 +7,14 @@ This file covers two related categories:
 
 ---
 
-## Category B — Configuration Gaps (Billing-Source Inventories Only)
+## Category B — Configuration Gaps (Billing-Only Mode)
 
-_Fire when:_ `gcp-resource-inventory.json` exists with `metadata.source == "billing"` AND at least one resource has `config_confidence == "assumed"`.
-_Skip when:_ `metadata.source == "terraform"`.
+_Fire when:_ `billing-profile.json` exists AND `gcp-resource-inventory.json` does NOT exist (billing-only mode).
+_Skip when:_ `gcp-resource-inventory.json` exists (Terraform/IaC provides configuration directly).
 
-These fill factual gaps in the inferred inventory. Answers update the inventory understanding — they do not produce design constraints directly.
+These fill factual gaps that billing data alone cannot answer. Answers update the inventory understanding — they do not produce design constraints directly.
+
+Each question fires only when the matching `gcp_service_type` appears in `billing-profile.json → services[]`:
 
 - **Cloud SQL HA**: Single-zone or high-availability? _(ask if SKU says Zonal)_
   > Default: assume Zonal is intentional.

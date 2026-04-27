@@ -50,7 +50,7 @@ Same decision logic, auto-detect signals, combination logic, and interpretation 
 - CrewAI, AutoGen, custom multi-agent → D
 - OpenAI Agents SDK / Swarm → E
 - MCP / A2A protocol → F
-- Vapi, Bland.ai, Retell, Whisper → G
+- Vapi, Bland.ai, Retell, Whisper, Nova Sonic / Nova 2 Sonic → G
 
 > How your AI calls reach the model determines migration effort.
 >
@@ -183,7 +183,7 @@ Establish the baseline model recommendation and whether multimodal capabilities 
 
 **Override hierarchy:**
 
-1. Q10 special features — hard overrides (e.g., speech-to-speech forces Nova Sonic regardless of source model)
+1. Q10 special features — hard overrides (e.g., speech-to-speech forces Nova 2 Sonic regardless of source model)
 2. Q2 priority — adjusts up or down within the Claude family (e.g., "lowest cost" downgrades Sonnet → Haiku even if source model was GPT-4)
 3. Q7/Q8 volume and latency — may adjust toward provisioned throughput or faster models
 4. Q5 source model — baseline only, used when no overrides apply
@@ -195,27 +195,32 @@ Establish the baseline model recommendation and whether multimodal capabilities 
 > C) GPT-3.5 Turbo
 > D) GPT-4 / GPT-4 Turbo
 > E) GPT-4o
-> F) GPT-5 / GPT-5.x
-> G) o-series (o1, o3)
-> H) Other / Multiple models
-> I) I don't know
+> F) GPT-5.4 / GPT-5.4 Mini / GPT-5.4 Nano / GPT-5.4 Pro
+> G) GPT-5 / GPT-5.x (older)
+> H) o-series (o1, o3)
+> I) Other / Multiple models
+> J) I don't know
 
-| Source Model              | Baseline Bedrock Recommendation                                       | Pricing Context                                                  |
-| ------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Gemini Flash variants     | Claude Haiku 4.5 ($1/$5) — speed and cost optimized                   | Strong savings vs Gemini Flash pricing                           |
-| Gemini Pro variants       | Claude Sonnet 4.6 ($3/$15) — quality match                            | Comparable pricing tier                                          |
-| GPT-3.5 Turbo             | Claude Haiku 4.5 ($1/$5) — cost-equivalent                            | Haiku is faster and cheaper                                      |
-| GPT-4 / GPT-4 Turbo       | Claude Sonnet 4.6 ($3/$15) — quality equivalent                       | Major savings: GPT-4 Turbo is $10/$30 vs Sonnet $3/$15           |
-| GPT-4o                    | Claude Sonnet 4.6 ($3/$15) — performance equivalent                   | Modest savings on output; input slightly higher on Bedrock       |
-| GPT-5 / GPT-5.x           | Claude Sonnet 4.6 ($3/$15) — performance equivalent                   | GPT-5 is $1.25/$10 — savings story is quality/features, not cost |
-| GPT-5 (flagship use case) | Claude Opus 4.6 ($5/$25) — flagship-to-flagship                       | Opus still cheaper than GPT-5 Pro ($15/$120)                     |
-| o-series (o1, o3)         | Claude Sonnet 4.6 with extended thinking; Opus 4.6 for most demanding | o1 is $15/$60 — significant savings with Sonnet 4.6 at $3/$15    |
+| Source Model              | Baseline Bedrock Recommendation                                       | Pricing Context                                                                   |
+| ------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Gemini Flash variants     | Claude Haiku 4.5 ($1/$5) — speed and cost optimized                   | Strong savings vs Gemini Flash pricing                                            |
+| Gemini Pro variants       | Claude Sonnet 4.6 ($3/$15) — quality match                            | Comparable pricing tier                                                           |
+| GPT-3.5 Turbo             | Claude Haiku 4.5 ($1/$5) — cost-equivalent                            | Haiku is faster and cheaper                                                       |
+| GPT-4 / GPT-4 Turbo       | Claude Sonnet 4.6 ($3/$15) — quality equivalent                       | Major savings: GPT-4 Turbo is $10/$30 vs Sonnet $3/$15                            |
+| GPT-4o                    | Claude Sonnet 4.6 ($3/$15) — performance equivalent                   | Modest savings on output; input slightly higher on Bedrock                        |
+| GPT-5.4                   | Claude Sonnet 4.6 ($3/$15) — near price parity                        | GPT-5.4 is $2.50/$15 — ~5% cheaper; migration case is AWS consolidation, not cost |
+| GPT-5.4 Mini              | Nova Lite ($0.06/$0.24) — massive cost savings                        | 94% cheaper on Bedrock; strong migration case                                     |
+| GPT-5.4 Nano              | Nova Micro ($0.035/$0.14) — massive cost savings                      | 87% cheaper on Bedrock; strong migration case                                     |
+| GPT-5.4 Pro               | Nova 2 Pro ($1.38/$11) — flagship reasoning on AWS                    | 94% cheaper on Bedrock; strongest migration case                                  |
+| GPT-5 / GPT-5.x (older)   | Claude Sonnet 4.6 ($3/$15) — performance equivalent                   | GPT-5 is $1.25/$10 — savings story is quality/features, not cost                  |
+| GPT-5 (flagship use case) | Claude Opus 4.6 ($5/$25) — flagship-to-flagship                       | Opus still cheaper than GPT-5 Pro ($15/$120)                                      |
+| o-series (o1, o3)         | Claude Sonnet 4.6 with extended thinking; Opus 4.6 for most demanding | o1 is $15/$60 — significant savings with Sonnet 4.6 at $3/$15                     |
 
 **Example overrides:**
 
 - GPT-4 user (baseline: Sonnet 4.6) + Q2=lowest cost → **Haiku 4.5**
 - Gemini Flash user (baseline: Haiku 4.5) + Q10=extended thinking → **Sonnet 4.6 with extended thinking**
-- GPT-4o user (baseline: Sonnet 4.6) + Q10=real-time speech → **Nova Sonic** (Claude has no speech capability)
+- GPT-4o user (baseline: Sonnet 4.6) + Q10=real-time speech → **Nova 2 Sonic** (Claude has no speech capability)
 - GPT-3.5 user (baseline: Haiku 4.5) + Q9=complex reasoning → **Sonnet 4.6** (task complexity overrides cost-equivalent mapping)
 - GPT-5 user (baseline: Opus 4.6) + Q2=balanced → **Sonnet 4.6** (priority overrides flagship-to-flagship mapping)
 
@@ -235,11 +240,11 @@ Default: _(auto-detect)_ — fall back to Q2 priority-based selection.
 > B) Vision required
 > C) Audio/Video inputs needed
 
-| Answer             | Recommendation Impact                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------- |
-| Text only          | Full model catalog available; cheapest/fastest text model per Q2 priority             |
-| Vision required    | Claude Sonnet family (multimodal) required; Haiku excluded for vision tasks           |
-| Audio/Video inputs | Amazon Nova Reel (video) or Nova Sonic (audio); Claude excluded for audio/video input |
+| Answer             | Recommendation Impact                                                                                                  |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Text only          | Full model catalog available; cheapest/fastest text model per Q2 priority                                              |
+| Vision required    | Claude Sonnet or Haiku (both support multimodal vision); Nova Micro excluded (text-only)                               |
+| Audio/Video inputs | Amazon Nova 2 Sonic (audio); Nova Reel v1 for video (Legacy — EOL Sep 30, 2026); Claude excluded for audio/video input |
 
 Interpret: same as Q20 → `ai_vision`.
 
@@ -275,14 +280,14 @@ These questions refine the model recommendation based on actual usage patterns �
 Interpret:
 
 ```
-A -> ai_token_volume: "<1M" — On-demand; no provisioned throughput
-B -> ai_token_volume: "1M-10M" — On-demand; prompt caching analysis
-C -> ai_token_volume: "10M-100M" — Provisioned throughput analysis; prompt caching
-D -> ai_token_volume: ">100M" — Provisioned throughput required; capacity planning
+A -> ai_token_volume: "low" — On-demand; no provisioned throughput
+B -> ai_token_volume: "medium" — On-demand; prompt caching analysis
+C -> ai_token_volume: "high" — Provisioned throughput analysis; prompt caching
+D -> ai_token_volume: "very_high" — Provisioned throughput required; capacity planning
 E -> same as default (B)
 ```
 
-Default: B — `ai_token_volume: "1M-10M"`.
+Default: B — `ai_token_volume: "medium"`.
 
 ---
 
@@ -390,7 +395,7 @@ Write `$MIGRATION_DIR/preferences.json` with AI-only structure:
     "cross_cloud": { "value": "latency-acceptable", "chosen_by": "user" },
     "ai_model_baseline": { "value": "claude-sonnet-4-6", "chosen_by": "derived" },
     "ai_vision": { "value": "text-only", "chosen_by": "user" },
-    "ai_token_volume": { "value": "1M-10M", "chosen_by": "user" },
+    "ai_token_volume": { "value": "medium", "chosen_by": "user" },
     "ai_latency": { "value": "important", "chosen_by": "user" },
     "ai_complexity": { "value": "moderate", "chosen_by": "user" },
     "ai_critical_feature": { "value": "none", "chosen_by": "user" },
@@ -407,16 +412,24 @@ Write `$MIGRATION_DIR/preferences.json` with AI-only structure:
 1. `metadata.migration_type` is `"ai-only"` — downstream phases use this to skip infrastructure design/estimation.
 2. `design_constraints` is minimal — only `target_region` (derived from GCP deployment region or cross-cloud latency preference).
 3. `ai_constraints.cross_cloud` is unique to AI-only migrations — not present in full migration preferences.
-4. `ai_constraints.ai_token_volume` uses different tiers than full migration Q18 — more granular for AI-only cost analysis.
+4. `ai_constraints.ai_token_volume` uses qualitative labels (`"low"`, `"medium"`, `"high"`, `"very_high"`) — more granular than full migration Q18 for AI-only cost analysis.
 5. All other schema rules from `clarify.md` apply (value/chosen_by fields, no nulls, derived capabilities).
 
 ---
 
 ## Step 4: Update Phase Status
 
-Update `$MIGRATION_DIR/.phase-status.json`:
+Before phase completion, enforce output gate:
+
+- `preferences.json` must exist.
+- `preferences.json.metadata.migration_type` must equal `"ai-only"`.
+
+If either check fails: STOP and output: "AI-only clarify output validation failed. Fix `preferences.json` before completing Phase 2."
+
+Use the Phase Status Update Protocol (read-merge-write) to update `$MIGRATION_DIR/.phase-status.json` in the same turn as the output message:
 
 - Set `phases.clarify` to `"completed"`
+- Set `current_phase` to `"design"`
 - Update `last_updated` to current timestamp
 
 Output to user: "Clarification complete. Proceeding to Phase 3: Design AI Migration Architecture."

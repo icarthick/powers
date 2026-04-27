@@ -1,21 +1,22 @@
 ---
 name: "gcp-aws-migrate"
 displayName: "GCP to AWS Migration Advisor"
-description: "Expert guidance for migrating workloads from Google Cloud Platform to AWS. This no-cost tool assesses your current cloud provider's usage, geography, and billing data to estimate and compare AWS services and pricing, and recommends migration or continued use of your current provider. AWS pricing is based on current published pricing and may vary over time. The tool may generate a .migration folder containing comparison and migration execution data, which you may delete upon completion or use to migrate to AWS."
+description: "Migrate workloads from Google Cloud Platform to AWS. Triggers on: migrate from GCP, GCP to AWS, move off Google Cloud, migrate Terraform to AWS, migrate Cloud SQL to RDS, migrate GKE to EKS, migrate Cloud Run to Fargate, Google Cloud migration. Runs a 6-phase process: discover GCP resources from Terraform files, app code, or billing exports, clarify migration requirements, design AWS architecture, estimate costs, generate migration artifacts, and collect optional feedback. Clarify must finish before Design, Estimate, or Generate. Includes AI provider migration guidance (for example, OpenAI to Amazon Bedrock) by selecting closest-fit Bedrock model families for required modality, latency/quality targets, context windows, and cost constraints. Model mapping is compatibility-guided, not 1:1 parity; validate prompts, tool-calling behavior, and eval metrics before cutover. Do not use for: Azure or on-premises migrations to AWS, AWS-to-GCP reverse migration, general AWS architecture advice without migration intent, GCP-to-GCP refactoring, or multi-cloud deployments that do not involve migrating off GCP."
 keywords: ["gcp", "aws", "migration", "cloud migration", "terraform", "re-platform", "cost estimation", "architecture"]
 author: "AWS"
 ---
 
 # GCP-to-AWS Migration Advisor
 
-Migrate workloads from Google Cloud Platform to AWS with a 5-phase guided process: Terraform infrastructure discovery, requirements clarification, AWS architecture design, cost estimation, and execution planning. This no-cost tool assesses your current cloud provider's usage, geography, and billing data to estimate and compare AWS services and pricing, and recommends migration or continued use of your current provider. AWS pricing is based on current published pricing and may vary over time. The tool may generate a .migration folder containing comparison and migration execution data, which you may delete upon completion or use to migrate to AWS.
-
+Migrate workloads from Google Cloud Platform to AWS with a 6-phase guided process: Terraform infrastructure discovery, requirements clarification, AWS architecture design, cost estimation, execution planning, and optional feedback. This no-cost tool assesses your current cloud provider's usage, geography, and billing data to estimate and compare AWS services and pricing, and recommends migration or continued use of your current provider. AWS pricing is based on current published pricing and may vary over time. The tool may generate a .migration folder containing comparison and migration execution data, which you may delete upon completion or use to migrate to AWS.
 
 ## Philosophy
 
 - **Re-platform by default**: Select AWS services that match GCP workload types (e.g., Cloud Run → Fargate, Cloud SQL → RDS).
 - **Dev sizing unless specified**: Default to development-tier capacity (e.g., db.t4g.micro, single AZ). Upgrade only on user direction.
+- **No human one-time migration costs**: Do not present human labor, professional services, or people-time work as dollar estimates or "one-time migration cost" budget categories. Vendor charges grounded in data (for example GCP data transfer egress in the infra estimate when billing exists) are allowed.
 - **Multi-signal approach**: Design phase adapts based on available inputs — Terraform IaC for infrastructure, billing data for service mapping, and app code for AI workload detection.
+- **BigQuery / `google_bigquery_*`**: The power **does not** recommend a specific AWS analytics or warehouse service. During **Clarify**, if discovery shows BigQuery (IaC `google_bigquery_*` and/or billing rows for BigQuery), you **must** surface the specialist advisory **before** Design (see `steering/clarify.md`). Design output uses **`Deferred — specialist engagement`**; keep directing the user to their **AWS account team** and/or a **data analytics migration partner** through Design, Estimate, and docs (see `steering/design-infra.md` BigQuery specialist gate).
 
 ---
 
@@ -51,20 +52,28 @@ If none of the above are found, stop and ask user to provide at least one source
 
 This is the execution controller. After completing each phase, consult this table to determine the next action.
 
-| Current State   | Condition | Next Action                     |
-| --------------- | --------- | ------------------------------- |
-| `start`         | always    | Load `steering/discover.md`     |
-| `discover_done` | always    | Load `steering/clarify.md`      |
-| `clarify_done`  | always    | Load `steering/design.md`       |
-| `design_done`   | always    | Load `steering/estimate.md`     |
-| `estimate_done` | always    | Load `steering/generate.md`     |
-| `generate_done` | always    | Migration planning complete     |
+| Current State | Condition                                                             | Next Action                                                                            |
+| ------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `discover`    | `phases.discover != "completed"`                                      | Load `steering/discover.md`                                                            |
+| `clarify`     | `phases.discover == "completed"` AND `phases.clarify != "completed"`  | Load `steering/clarify.md`                                                             |
+| `design`      | `phases.clarify == "completed"` AND `phases.design != "completed"`    | Load `steering/design.md`                                                              |
+| `estimate`    | `phases.design == "completed"` AND `phases.estimate != "completed"`   | Load `steering/estimate.md`                                                            |
+| `generate`    | `phases.estimate == "completed"` AND `phases.generate != "completed"` | Load `steering/generate.md`                                                            |
+| `complete`    | `phases.generate == "completed"` AND `phases.feedback == "pending"`   | Set `phases.feedback` to `"completed"` (user had two chances), then migration complete |
+| `complete`    | `phases.generate == "completed"` AND `phases.feedback == "completed"` | Migration planning complete                                                            |
 
-**How to determine current state:** Read `$MIGRATION_DIR/.phase-status.json` → check `phases` object → find the last phase with value `"completed"`.
+**How to determine current state (deterministic):**
+
+1. Read `$MIGRATION_DIR/.phase-status.json`
+2. If `current_phase` exists, use it (must match one of: discover, clarify, design, estimate, generate, complete)
+3. Otherwise use ordered phase evaluation: `discover` → `clarify` → `design` → `estimate` → `generate`
+4. Pick the **first** phase in that order where `phases.<phase> != "completed"`; if none, state is `complete`
 
 **Phase gate checks**: If prior phase incomplete, do not advance (e.g., cannot enter estimate without completed design).
 
-**Feedback checkpoints**: Feedback is not a sequential phase — it is offered at two interleaved checkpoints (after Discover and after Estimate). See step 7 of **Workflow Execution** below for details.
+**Clarify is mandatory:** Do not load `steering/design.md`, `steering/estimate.md`, or `steering/generate.md` unless `$MIGRATION_DIR/.phase-status.json` exists and `phases.clarify` is exactly `"completed"`. A `preferences.json` file alone is **not** sufficient proof that Clarify ran. If the user asks to skip Clarify or jump straight to Design, cost estimate, or artifact generation, refuse briefly, then load `steering/clarify.md` and run Phase 2. There is no exception for "quick" or "obvious" migrations.
+
+**Feedback checkpoints**: Feedback is not a sequential phase — it is offered at two interleaved checkpoints (after Discover and after Estimate). See the **Feedback Checkpoints** section below for details.
 
 ---
 
@@ -75,7 +84,10 @@ When reading `$MIGRATION_DIR/.phase-status.json`, validate before proceeding:
 1. **Multiple sessions**: If multiple directories exist under `.migration/`, list them with their phase status and ask: [A] Resume latest, [B] Start fresh, [C] Cancel.
 2. **Invalid JSON**: If `.phase-status.json` fails to parse, STOP. Output: "State file corrupted (invalid JSON). Delete the file and restart the current phase."
 3. **Unrecognized phase**: If `phases` object contains a phase not in {discover, clarify, design, estimate, generate, feedback}, STOP. Output: "Unrecognized phase: [value]. Valid phases: discover, clarify, design, estimate, generate, feedback."
-4. **Unrecognized status**: If any `phases.*` is not in {pending, in_progress, completed}, STOP. Output: "Unrecognized status: [value]. Valid values: pending, in_progress, completed."
+4. **Unrecognized status**: If any `phases.*` value is not in {pending, in_progress, completed}, STOP. Output: "Unrecognized status: [value]. Valid values: pending, in_progress, completed."
+5. **Invalid `current_phase`** (if present): If `current_phase` is not in {discover, clarify, design, estimate, generate, complete}, STOP. Output: "Unrecognized current_phase: [value]. Valid values: discover, clarify, design, estimate, generate, complete."
+6. **Out-of-order completion**: For ordered phases [discover, clarify, design, estimate, generate], if any later phase is `"completed"` while an earlier phase is not `"completed"`, STOP. Output: "Inconsistent phase ordering detected. Reconcile `.phase-status.json` before resuming."
+7. **Multiple active phases**: Across core phases {discover, clarify, design, estimate, generate}, at most one phase may be `"in_progress"`. If >1, STOP. Output: "Multiple phases are in_progress. Keep only one active phase before resuming."
 
 ---
 
@@ -89,6 +101,7 @@ Migration state lives in `$MIGRATION_DIR` (`.migration/[MMDD-HHMM]/`), created b
 {
   "migration_id": "0226-1430",
   "last_updated": "2026-02-26T15:35:22-05:00",
+  "current_phase": "design",
   "phases": {
     "discover": "completed",
     "clarify": "completed",
@@ -101,14 +114,20 @@ Migration state lives in `$MIGRATION_DIR` (`.migration/[MMDD-HHMM]/`), created b
 ```
 
 **Status values:** `"pending"` → `"in_progress"` → `"completed"`. Never goes backward.
+For core phases (discover, clarify, design, estimate, generate), at most one phase may be `"in_progress"` at any time.
+`current_phase` is optional but recommended; when present it is authoritative.
 
 The `.migration/` directory is automatically protected by a `.gitignore` file created in Phase 1.
 
----
+### Phase Status Update Protocol
 
-## Phase Status Update Protocol
+Use **read-merge-write** updates for `.phase-status.json`:
 
-**Do not Read `.phase-status.json` before updating it.** You already know the current state because you are executing phases sequentially. Use the Write tool to write the **complete file** in the same turn as your final phase work (e.g., the output message announcing phase completion).
+1. Read the current file before every update.
+2. Change only the phase keys being advanced and `last_updated`.
+3. Keep prior completed phases unchanged.
+4. Set `current_phase` to the next deterministic phase (or `complete` after generate).
+5. Write the full file in the same turn as your final phase work message.
 
 Example — after completing the Clarify phase, write `$MIGRATION_DIR/.phase-status.json` with:
 
@@ -116,6 +135,7 @@ Example — after completing the Clarify phase, write `$MIGRATION_DIR/.phase-sta
 {
   "migration_id": "MMDD-HHMM",
   "last_updated": "2026-02-26T15:35:22-05:00",
+  "current_phase": "design",
   "phases": {
     "discover": "completed",
     "clarify": "completed",
@@ -128,8 +148,6 @@ Example — after completing the Clarify phase, write `$MIGRATION_DIR/.phase-sta
 ```
 
 Replace `MMDD-HHMM` with the actual migration ID, generate the `last_updated` ISO 8601 timestamp with local timezone offset yourself, and set each phase to its correct status at that point.
-
-**Read `.phase-status.json` ONLY during session resume** (Step 0 of discover.md when checking for existing runs) or the feedback prerequisite check.
 
 ---
 
@@ -158,24 +176,18 @@ This applies to all files written during any phase, including JSON artifacts, Te
 
 ---
 
-## Defaults
-
-- **IaC output**: Terraform configurations, migration scripts, AI migration code, and documentation
-- **Region**: `us-east-1` (unless user specifies, or GCP region → AWS region mapping suggests otherwise)
-- **Sizing**: Development tier (e.g., `db.t4g.micro` for databases, 0.5 CPU for Fargate)
-- **Migration mode**: Adapts based on available inputs (infrastructure, AI, or billing-only)
-- **Cost currency**: USD
-- **Timeline assumption**: 8-12 weeks total
-
----
-
 ## MCP Servers
+
+**awsknowledge** (for documentation and architecture guidance):
+
+- Provides AWS documentation, best practices, and service guidance
+- Available throughout all phases for reference lookups
 
 **awspricing** (for cost estimation):
 
 - Provides `get_pricing`, `get_pricing_service_codes`, `get_pricing_service_attributes` tools
 - Only needed during Estimate phase. Discover and Design do not require it.
-- Primary pricing source: `steering/cached-prices.md` (cached rates, ±5-10% for infra, ±15-25% for AI). MCP is secondary — used only for services not found in the cache.
+- Primary pricing source: `steering/cached-prices.md` (cached 2026 rates, ±5-10% for infrastructure, ±15-25% for AI models). MCP is secondary — used only for services not found in the cache.
 
 **Recommended setup** (better accuracy):
 
@@ -186,23 +198,27 @@ This applies to all files written during any phase, including JSON artifacts, Te
 
 ---
 
+## Defaults
+
+- **IaC output**: Terraform configurations, migration scripts, AI migration code, and documentation
+- **Region**: `us-east-1` (unless user specifies, or GCP region → AWS region mapping suggests otherwise)
+- **Sizing**: Development tier (e.g., `db.t4g.micro` for databases, 0.5 CPU for Fargate)
+- **Migration mode**: Adapts based on available inputs (infrastructure, AI, or billing-only)
+- **Cost currency**: USD
+- **Timeline assumption**: 2-16 weeks depending on migration complexity — small (2-6 weeks), medium (6-12 weeks), large (12-18 weeks). See `steering/migration-complexity.md` for tier definitions.
+
 ## Workflow Execution
 
 When invoked, the agent **MUST follow this exact sequence**:
 
 1. **Load phase status**: Read `.phase-status.json` from `.migration/*/`.
    - If missing: Initialize for Phase 1 (Discover)
-   - If exists: Determine current phase based on phase field and status value
+   - If exists: Determine current phase using deterministic rules in **State Machine**
 
 2. **Determine phase to execute**:
-   - If status is `in_progress`: Resume that phase (read corresponding steering file)
-   - If status is `completed`: Advance to next phase (read next steering file)
-   - Phase mapping for advancement:
-     - discover (completed) → Execute clarify (read `steering/clarify.md`)
-     - clarify (completed) → Execute design (read `steering/design.md`)
-     - design (completed) → Execute estimate (read `steering/estimate.md`)
-     - estimate (completed) → Execute generate (read `steering/generate.md`)
-     - generate (completed) → Migration complete
+   - If `current_phase` exists: execute that phase.
+   - Otherwise execute the first non-completed phase in ordered list: discover → clarify → design → estimate → generate.
+   - If all ordered phases are completed: migration is complete (with feedback finalization rule).
 
 3. **Read phase reference**: Load the full steering file for the target phase.
 
@@ -210,9 +226,9 @@ When invoked, the agent **MUST follow this exact sequence**:
 
 5. **Validate outputs**: Confirm all required output files exist with correct schema before proceeding.
 
-6. **Update phase status**: Use the Phase Status Update Protocol (Write tool, no Read) in the same turn as the phase's final output message.
+6. **Update phase status**: Use the Phase Status Update Protocol (read-merge-write) in the same turn as the phase's final output message.
 
-7. **Feedback checkpoint**: After a phase completes, check if feedback should be offered. This runs **before** advancing to the next phase.
+7. **Feedback checkpoint**: After a phase completes, check if feedback is due (see rules below). This runs **before** advancing to the next phase.
 
    - **After Discover** (if `phases.feedback` is `"pending"`): Output to user:
      "Would you like to share quick feedback (5 optional questions + anonymized usage data) to help improve this tool? Your data never includes resource names, file paths, or account IDs.
@@ -226,27 +242,27 @@ When invoked, the agent **MUST follow this exact sequence**:
      [A] Yes, share feedback
      [B] No thanks, continue to Generate"
      - If user picks **A** → Load `steering/feedback.md`, execute it, then continue to Generate.
-     - If user picks **B** → Set `phases.feedback` to `"completed"`, update `last_updated`. Continue to Generate.
+     - If user picks **B** → Use the Phase Status Update Protocol to set `phases.feedback` to `"completed"`. Continue to Generate.
 
-   - **After Generate**: No feedback offer. If `phases.feedback` is still `"pending"`, set it to `"completed"` and update `last_updated` (user had two chances and chose to defer/skip).
+   - **After Generate**: No feedback offer. If `phases.feedback` is still `"pending"`, use the Phase Status Update Protocol to set it to `"completed"` (user had two chances and chose to defer/skip).
 
 8. **Display summary**: Show user what was accomplished, highlight next phase, or confirm migration completion.
 
 **Critical constraint**: Agent must strictly adhere to the steering file's workflow. If unable to complete a step, stop and report the exact step that failed.
 
-User can invoke the power again to resume from last completed phase.
+User can invoke the power again to resume from `current_phase` (or deterministic ordered evaluation when `current_phase` is absent).
 
 ---
 
 ## Error Conditions
 
-| Condition                                                     | Action                                                                                                                                           |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| No GCP sources found (no `.tf`, no app code, no billing data) | Stop. Output: "No GCP sources detected. Provide at least one source type (Terraform files, application code, or billing exports) and try again." |
-| `.phase-status.json` missing phase gate                       | Stop. Output: "Cannot enter Phase X: Phase Y-1 not completed. Start from Phase Y or resume Phase Y-1."                                           |
-| awspricing unavailable after 3 attempts                       | Display user warning about ±5-25% accuracy. Use `steering/cached-prices.md`. Add `pricing_source: "cached"` to estimation.json.                  |
-| User skips questions or says "use all defaults"               | Apply documented defaults from each category file. Phase 2 completes either way.                                                                 |
-| `aws-design.json` missing required clusters                   | Stop Phase 4. Output: "Re-run Phase 3 to generate missing cluster designs."                                                                      |
+| Condition                                                     | Action                                                                                                                                                  |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No GCP sources found (no `.tf`, no app code, no billing data) | Stop. Output: "No GCP sources detected. Provide at least one source type (Terraform files, application code, or billing exports) and try again."        |
+| `.phase-status.json` missing phase gate                       | Stop. Output: "Cannot enter Phase X: Phase Y-1 not completed. Start from Phase Y or resume Phase Y-1."                                                  |
+| awspricing unavailable after 3 attempts                       | Display user warning about ±5-25% accuracy. Use `steering/cached-prices.md`. Add `pricing_source: "cached_fallback"` to the applicable `estimation-*.json` file. |
+| User skips questions or says "use all defaults"               | Apply documented defaults from each category file. Phase 2 completes either way.                                                                        |
+| `aws-design.json` missing required clusters                   | Stop Phase 4. Output: "Re-run Phase 3 to generate missing cluster designs."                                                                             |
 
 ---
 
@@ -297,6 +313,7 @@ gcp-aws-migrate/
     ├── generate-artifacts-scripts.md           # Migration scripts
     ├── generate-artifacts-ai.md                # Provider adapter + test harness
     ├── generate-artifacts-billing.md           # Skeleton Terraform with TODO markers
+    ├── generate-artifacts-report.md            # HTML migration report
     ├── generate-artifacts-docs.md              # MIGRATION_GUIDE.md + README.md
     │
     ├── # Feedback sub-files
@@ -310,6 +327,7 @@ gcp-aws-migrate/
     ├── design-ref-storage.md                   # Storage mappings (GCS → S3)
     ├── design-ref-networking.md                # Networking mappings (VPC, LB, DNS, Interconnect)
     ├── design-ref-messaging.md                 # Messaging mappings (Pub/Sub, Cloud Tasks)
+    ├── design-ref-security.md                  # Security mappings (Secret Manager → Secrets Manager)
     ├── design-ref-ai.md                        # AI/ML mappings (traditional ML → SageMaker)
     ├── design-ref-ai-gemini-to-bedrock.md      # Gemini → Bedrock model selection guide
     ├── design-ref-ai-openai-to-bedrock.md      # OpenAI → Bedrock model selection guide
@@ -327,8 +345,12 @@ gcp-aws-migrate/
     ├── schema-discover-billing.md              # billing-profile schema
     ├── schema-estimate-infra.md                # estimation-infra.json schema
     │
+    ├── # Shared reference files
+    ├── ai-model-lifecycle.md                   # Bedrock model lifecycle states (Active/Legacy/EOL)
+    ├── migration-complexity.md                 # Complexity tier definitions (small/medium/large)
+    │
     ├── # Pricing files
-    └── cached-prices.md                        # Pre-fetched live AWS pricing (±5-10%, primary)
+    └── cached-prices.md                        # Cached AWS + source provider pricing (±5-25%, primary)
 ```
 
 ---

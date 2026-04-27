@@ -42,7 +42,7 @@ Before presenting questions, show the AI detection context:
 - `mcp.server` / `mcp.client` imports, MCP config JSON files → F
 - A2A protocol config or SDK imports → F
 - Vapi, Bland.ai, Retell SDK imports → G
-- Nova Sonic or Whisper integration in code → G
+- Nova Sonic / Nova 2 Sonic or Whisper integration in code → G
 
 _Skip when:_ Auto-detection fully resolves the framework(s). Use detected value(s) with `chosen_by: "extracted"`.
 
@@ -66,7 +66,7 @@ _Skip when:_ Auto-detection fully resolves the framework(s). Use detected value(
 | D) Multi-agent framework                 | Two paths: 1) Keep framework, swap to Bedrock as LLM provider — lower effort, 2) Migrate to Bedrock multi-agent orchestration — higher effort, deeper AWS integration; recommend path 1 unless managed infrastructure wanted | Medium            | Path 1: 3–5 days; Path 2: 2–4 weeks                |
 | E) OpenAI Agents SDK / custom agent loop | Highest effort; OpenAI Agents SDK is tightly coupled to OpenAI API with no provider swap; recommend Bedrock Agents as replacement or LangGraph as portable intermediate step; tool-calling schema translation required       | High              | 2–4 weeks                                          |
 | F) MCP servers or A2A protocol           | Bedrock Agents supports MCP tool use natively; A2A interop available; recommend Bedrock Agents as orchestration layer to preserve MCP/A2A investments                                                                        | Low–Medium        | 3–5 days for MCP; 1–2 weeks if A2A refactoring     |
-| G) Voice/conversational agent platform   | Check if platform supports Bedrock natively — if yes, config change only; if no, evaluate Nova Sonic as replacement for voice layer                                                                                          | Minimal to Medium | Hours if native; 2–3 weeks if Nova Sonic migration |
+| G) Voice/conversational agent platform   | Check if platform supports Bedrock natively — if yes, config change only; if no, evaluate Nova 2 Sonic as replacement for voice layer                                                                                          | Minimal to Medium | Hours if native; 2–3 weeks if Nova 2 Sonic migration |
 
 ### Combination Logic
 
@@ -206,8 +206,8 @@ Default: E — `ai_priority: "balanced"`.
 | RAG optimization                     | Amazon Bedrock Knowledge Bases recommended alongside model; Titan Embeddings for vector store                                                |
 | Agentic workflows                    | Claude Sonnet 4.6 with Bedrock Agents; multi-agent orchestration guidance included                                                           |
 | Real-time speed (< 500ms)            | Claude Haiku 4.5 or Nova Micro; streaming response guidance included                                                                         |
-| Multimodal with image generation     | Claude Sonnet 4.6 (vision) + Amazon Nova Canvas or Titan Image Generator for generation                                                      |
-| Real-time conversational speech      | Amazon Nova Sonic recommended for speech-to-speech; latency guidance included                                                                |
+| Multimodal with image generation     | Claude Sonnet 4.6 (vision) + Amazon Nova Canvas for generation                                                      |
+| Real-time conversational speech      | Amazon Nova 2 Sonic recommended for speech-to-speech; latency guidance included                                                                |
 | None                                 | Default recommendation from Q16 priority stands                                                                                              |
 
 Interpret:
@@ -221,7 +221,7 @@ E -> ai_critical_feature: "rag" — Bedrock Knowledge Bases + Titan Embeddings
 F -> ai_critical_feature: "agentic" — Claude Sonnet 4.6 + Bedrock Agents
 G -> ai_critical_feature: "real-time-speed" — Haiku 4.5 or Nova Micro
 H -> ai_critical_feature: "multimodal-generation" — Sonnet 4.6 + Nova Canvas/Titan Image
-I -> ai_critical_feature: "speech" — Nova Sonic (hard override — Claude has no speech)
+I -> ai_critical_feature: "speech" — Nova 2 Sonic (hard override — Claude has no speech)
 J -> (no constraint written — Q16 priority stands)
 ```
 
@@ -248,12 +248,12 @@ Default: J — no additional override.
 Interpret:
 
 ```
-A -> ai_volume_cost: "low-quality" — On-demand; quality model
-B -> ai_volume_cost: "medium-balanced" — On-demand; Savings Plans analysis
-C -> ai_volume_cost: "high-cost-critical" — Provisioned throughput; cheaper models; prompt caching
+A -> ai_token_volume: "low" — On-demand; quality model
+B -> ai_token_volume: "medium" — On-demand; Savings Plans analysis
+C -> ai_token_volume: "high" — Provisioned throughput; cheaper models; prompt caching
 ```
 
-Default: A — `ai_volume_cost: "low-quality"`.
+Default: A — `ai_token_volume: "low"`.
 
 ---
 
@@ -263,7 +263,7 @@ Default: A — `ai_volume_cost: "low-quality"`.
 
 **Override hierarchy:**
 
-1. Q17 special features — hard overrides (e.g., speech-to-speech forces Nova Sonic regardless of source model)
+1. Q17 special features — hard overrides (e.g., speech-to-speech forces Nova 2 Sonic regardless of source model)
 2. Q16 priority — adjusts up or down within the Claude family
 3. Q18/Q21 volume and latency — may further adjust toward provisioned throughput or faster models
 4. Q19 source model — baseline only, used when no overrides apply
@@ -275,27 +275,32 @@ Default: A — `ai_volume_cost: "low-quality"`.
 > C) GPT-3.5 Turbo
 > D) GPT-4 / GPT-4 Turbo
 > E) GPT-4o
-> F) GPT-5 / GPT-5.x
-> G) o-series (o1, o3)
-> H) Other / Multiple models
-> I) I don't know
+> F) GPT-5.4 / GPT-5.4 Mini / GPT-5.4 Nano / GPT-5.4 Pro
+> G) GPT-5 / GPT-5.x (older)
+> H) o-series (o1, o3)
+> I) Other / Multiple models
+> J) I don't know
 
-| Source Model              | Baseline Bedrock Recommendation                                       | Pricing Context                                                  |
-| ------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Gemini Flash variants     | Claude Haiku 4.5 ($1/$5) — speed and cost optimized                   | Strong savings vs Gemini Flash pricing                           |
-| Gemini Pro variants       | Claude Sonnet 4.6 ($3/$15) — quality match                            | Comparable pricing tier                                          |
-| GPT-3.5 Turbo             | Claude Haiku 4.5 ($1/$5) — cost-equivalent                            | Haiku is faster and cheaper                                      |
-| GPT-4 / GPT-4 Turbo       | Claude Sonnet 4.6 ($3/$15) — quality equivalent                       | Major savings: GPT-4 Turbo is $10/$30 vs Sonnet $3/$15           |
-| GPT-4o                    | Claude Sonnet 4.6 ($3/$15) — performance equivalent                   | Modest savings on output; input slightly higher on Bedrock       |
-| GPT-5 / GPT-5.x           | Claude Sonnet 4.6 ($3/$15) — performance equivalent                   | GPT-5 is $1.25/$10 — savings story is quality/features, not cost |
-| GPT-5 (flagship use case) | Claude Opus 4.6 ($5/$25) — flagship-to-flagship                       | Opus still cheaper than GPT-5 Pro ($15/$120)                     |
-| o-series (o1, o3)         | Claude Sonnet 4.6 with extended thinking; Opus 4.6 for most demanding | o1 is $15/$60 — significant savings with Sonnet 4.6 at $3/$15    |
+| Source Model              | Baseline Bedrock Recommendation                                       | Pricing Context                                                                   |
+| ------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Gemini Flash variants     | Claude Haiku 4.5 ($1/$5) — speed and cost optimized                   | Strong savings vs Gemini Flash pricing                                            |
+| Gemini Pro variants       | Claude Sonnet 4.6 ($3/$15) — quality match                            | Comparable pricing tier                                                           |
+| GPT-3.5 Turbo             | Claude Haiku 4.5 ($1/$5) — cost-equivalent                            | Haiku is faster and cheaper                                                       |
+| GPT-4 / GPT-4 Turbo       | Claude Sonnet 4.6 ($3/$15) — quality equivalent                       | Major savings: GPT-4 Turbo is $10/$30 vs Sonnet $3/$15                            |
+| GPT-4o                    | Claude Sonnet 4.6 ($3/$15) — performance equivalent                   | Modest savings on output; input slightly higher on Bedrock                        |
+| GPT-5.4                   | Claude Sonnet 4.6 ($3/$15) — near price parity                        | GPT-5.4 is $2.50/$15 — ~5% cheaper; migration case is AWS consolidation, not cost |
+| GPT-5.4 Mini              | Nova Lite ($0.06/$0.24) — massive cost savings                        | 94% cheaper on Bedrock; strong migration case                                     |
+| GPT-5.4 Nano              | Nova Micro ($0.035/$0.14) — massive cost savings                      | 87% cheaper on Bedrock; strong migration case                                     |
+| GPT-5.4 Pro               | Nova 2 Pro ($1.38/$11) — flagship reasoning on AWS                    | 94% cheaper on Bedrock; strongest migration case                                  |
+| GPT-5 / GPT-5.x (older)   | Claude Sonnet 4.6 ($3/$15) — performance equivalent                   | GPT-5 is $1.25/$10 — savings story is quality/features, not cost                  |
+| GPT-5 (flagship use case) | Claude Opus 4.6 ($5/$25) — flagship-to-flagship                       | Opus still cheaper than GPT-5 Pro ($15/$120)                                      |
+| o-series (o1, o3)         | Claude Sonnet 4.6 with extended thinking; Opus 4.6 for most demanding | o1 is $15/$60 — significant savings with Sonnet 4.6 at $3/$15                     |
 
 **Example overrides:**
 
 - GPT-4 user (baseline: Sonnet 4.6) + Q16=lowest cost → **Haiku 4.5**
 - Gemini Flash user (baseline: Haiku 4.5) + Q17=extended thinking → **Sonnet 4.6 with extended thinking**
-- GPT-4o user (baseline: Sonnet 4.6) + Q17=real-time speech → **Nova Sonic** (Claude has no speech)
+- GPT-4o user (baseline: Sonnet 4.6) + Q17=real-time speech → **Nova 2 Sonic** (Claude has no speech)
 - GPT-3.5 user (baseline: Haiku 4.5) + Q22=complex reasoning → **Sonnet 4.6** (complexity overrides cost mapping)
 - GPT-5 user (baseline: Opus 4.6) + Q16=balanced → **Sonnet 4.6** (priority overrides flagship mapping)
 
@@ -307,10 +312,14 @@ B -> ai_model_baseline: "claude-sonnet-4-6" — quality match
 C -> ai_model_baseline: "claude-haiku-4-5" — cost equivalent
 D -> ai_model_baseline: "claude-sonnet-4-6" — quality equivalent; major savings
 E -> ai_model_baseline: "claude-sonnet-4-6" — performance equivalent
-F -> ai_model_baseline: "claude-sonnet-4-6" — default; "claude-opus-4-6" for flagship use cases
-G -> ai_model_baseline: "claude-sonnet-4-6-extended-thinking" — reasoning equivalent
-H -> ai_model_baseline: "claude-sonnet-4-6" — safe default for multiple models
-I -> same as default (use Q16 priority to determine)
+F (GPT-5.4) -> ai_model_baseline: "claude-sonnet-4-6" — near price parity; AWS consolidation
+F (GPT-5.4 Mini) -> ai_model_baseline: "nova-lite" — 94% cheaper on Bedrock
+F (GPT-5.4 Nano) -> ai_model_baseline: "nova-micro" — 87% cheaper on Bedrock
+F (GPT-5.4 Pro) -> ai_model_baseline: "nova-2-pro" — 94% cheaper on Bedrock
+G -> ai_model_baseline: "claude-sonnet-4-6" — default; "claude-opus-4-6" for flagship use cases
+H -> ai_model_baseline: "claude-sonnet-4-6-extended-thinking" — reasoning equivalent
+I -> ai_model_baseline: "claude-sonnet-4-6" — safe default for multiple models
+J -> same as default (use Q16 priority to determine)
 ```
 
 Default: _(auto-detect from code)_ — fall back to Q16 priority-based selection.
@@ -327,18 +336,18 @@ Default: _(auto-detect from code)_ — fall back to Q16 priority-based selection
 > B) Vision required — model must process images
 > C) Audio/Video inputs needed
 
-| Answer             | Recommendation Impact                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------- |
-| Text only          | Full model catalog available; cheapest/fastest text model per Q16 priority            |
-| Vision required    | Claude Sonnet family (multimodal) required; Haiku excluded for vision tasks           |
-| Audio/Video inputs | Amazon Nova Reel (video) or Nova Sonic (audio); Claude excluded for audio/video input |
+| Answer             | Recommendation Impact                                                                                                  |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Text only          | Full model catalog available; cheapest/fastest text model per Q16 priority                                             |
+| Vision required    | Claude Sonnet or Haiku (both support multimodal vision); Nova Micro excluded (text-only)                               |
+| Audio/Video inputs | Amazon Nova 2 Sonic (audio); Nova Reel v1 for video (Legacy — EOL Sep 30, 2026); Claude excluded for audio/video input |
 
 Interpret:
 
 ```
 A -> (no constraint written — full model catalog)
-B -> ai_vision: "required" — Claude Sonnet family required; Haiku excluded for vision
-C -> ai_vision: "audio-video" — Nova Reel (video) or Nova Sonic (audio); Claude excluded
+B -> ai_vision: "required" — Claude Sonnet or Haiku (both support multimodal vision); Nova Micro excluded
+C -> ai_vision: "audio-video" — Nova 2 Sonic (audio) or Nova Reel v1 (video, Legacy — EOL Sep 30, 2026); Claude excluded
 ```
 
 Default: A — no constraint (text only).
